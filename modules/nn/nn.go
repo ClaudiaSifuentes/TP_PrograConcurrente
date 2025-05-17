@@ -33,6 +33,7 @@ func applySigmoidPrime(_, _ int, v float64) float64 {
 	return v * (1.0 - v)
 }
 
+
 // addBias adds the bias row-vector to each row of the pre-activation matrix
 func addBias(b *mat.Dense) func(_, col int, v float64) float64 {
 	return func(_, col int, v float64) float64 {
@@ -239,20 +240,31 @@ func (n *MLP) Predict(x *mat.Dense) *mat.Dense {
 	return as[len(as)-1]
 }
 
-func (n *MLP) Evaluate(x, y *mat.Dense) float64 {
+func (n *MLP) Evaluate(x, y *mat.Dense) (mae, mse float64) {
 	p := n.Predict(x)
-	N, _ := p.Dims()
-	var correct int
+	N, cols := p.Dims()
+	var sumAbs, sumSq float64
+
 	for i := 0; i < N; i++ {
-		ry := getRow(y, i)
-		truth := oneHotDecode(ry)
-		rp := getRow(p, i)
-		if prediction(rp) == truth {
-			correct++
+		pred := getRow(p, i)
+		target := getRow(y, i)
+
+		for j := 0; j < cols; j++ {
+			predVal := pred[j]*9 + 1
+			targetVal := target[j]*9 + 1
+
+			diff := predVal - targetVal
+			sumAbs += math.Abs(diff)
+			sumSq += diff * diff
 		}
 	}
-	return float64(correct) / float64(N) * 100.0
+
+	total := float64(N * cols)
+	mae = sumAbs / total
+	mse = sumSq / total
+	return
 }
+
 
 func (n *MLP) TrainConcurrent(x, y *mat.Dense) {
 	r, _ := x.Dims()

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/csv"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -47,6 +48,7 @@ func loadDF(path string) (*mat.Dense, *mat.Dense) {
 			xData[i*cols+j] = val
 		}
 		target, err := strconv.ParseFloat(record[cols], 64)
+		target = (target - 1) / 9.0
 		if err != nil {
 			log.Fatalf("failed to parse target: %v", err)
 		}
@@ -60,20 +62,20 @@ func loadDF(path string) (*mat.Dense, *mat.Dense) {
 }
 
 func main() {
-	x, y := loadDF("train_augmented.csv")
+	train_x, train_y := loadDF("data/train_augmented.csv")
+	test_x, test_y := loadDF("data/test.csv")
 
 	config := nn.Config{
-		Eta:       0.1,
+		Eta:       0.3,
 		Epochs:    100,
-		BatchSize: 1000,
+		BatchSize: 100,
 	}
 
-	mlp1 := nn.NewMLP([]int{11, 16, 1}, config)
+	mlp := nn.NewMLP([]int{11, 32, 16, 8, 1}, config)
 
-	mlp1.Train(x, y)
-
-	mlp2 := nn.NewMLP([]int{11, 16, 1}, config)
-
-	mlp2.TrainConcurrent(x, y)
+	mlp.TrainConcurrent(train_x, train_y)
+	mae, mse := mlp.Evaluate(test_x, test_y)
+	fmt.Println("MAE: ", mae)
+	fmt.Println("MSE: ", mse)
 
 }
