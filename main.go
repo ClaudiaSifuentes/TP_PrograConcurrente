@@ -19,6 +19,8 @@ func loadDF(path string) (*mat.Dense, *mat.Dense) {
 	defer file.Close()
 
 	reader := csv.NewReader(file)
+	reader.Comma = ';'
+
 	records, err := reader.ReadAll()
 	if err != nil {
 		log.Fatalf("failed to read CSV: %v", err)
@@ -58,7 +60,7 @@ func loadDF(path string) (*mat.Dense, *mat.Dense) {
 }
 
 func main() {
-	x, y := loadDF("synthetic_data.csv")
+	x, y := loadDF("train_augmented.csv")
 
 	config := nn.Config{
 		Eta:       0.1,
@@ -66,13 +68,12 @@ func main() {
 		BatchSize: 1000,
 	}
 
-	mlp1 := nn.NewMLP([]int{4, 5, 1}, config)
+	mlp1 := nn.NewMLP([]int{11, 16, 1}, config)
 
 	mlp1.Train(x, y)
 
-	mlp2 := nn.NewMLP([]int{4, 5, 1}, config)
+	mlp2 := nn.NewMLP([]int{11, 16, 1}, config)
 
 	mlp2.TrainConcurrent(x, y)
-
 
 }
