@@ -1,81 +1,121 @@
 package main
 
 import (
-	"encoding/csv"
 	"fmt"
+	"linearregression/lr"
+	"linearregression/rd"
+	"linearregression/utils"
 	"log"
-	"os"
-	"strconv"
-
-	"neural_network/modules/nn"
-
-	mat "neural_network/modules/mymat"
+	"time"
 )
 
-func loadDF(path string) (*mat.Dense, *mat.Dense) {
-	file, err := os.Open(path)
+func runMultivariateRegression(trainData, testData []rd.DataPoint, featureColumns []int) {
+	trainX := make([][]float64, len(trainData))
+	trainY := make([]float64, len(trainData))
+	for i, dp := range trainData {
+		trainX[i] = make([]float64, len(dp.Features))
+		copy(trainX[i], dp.Features)
+		trainY[i] = dp.Target
+	}
+
+	testX := make([][]float64, len(testData))
+	testY := make([]float64, len(testData))
+	for i, dp := range testData {
+		testX[i] = make([]float64, len(dp.Features))
+		copy(testX[i], dp.Features)
+		testY[i] = dp.Target
+	}
+
+	model := lr.New(len(featureColumns))
+
+	epochs := 1500
+	learningRate := 0.003
+	workers := 4
+
+	fmt.Printf("Entrenando modelo multivariante con %d características\n", len(featureColumns))
+	fmt.Printf("Parámetros de entrenamiento: épocas=%d, lr=%.4f, hilos=%d\n", epochs, learningRate, workers)
+
+	startTime := time.Now()
+	err := model.Fit(trainX, trainY, epochs, learningRate, workers)
 	if err != nil {
-		log.Fatalf("failed to open file: %v", err)
+		log.Printf("Error al entrenar el modelo multivariante: %v", err)
+		return
 	}
-	defer file.Close()
+	trainingTime := time.Since(startTime)
 
-	reader := csv.NewReader(file)
-	reader.Comma = ';'
+	loss, converged := model.GetTrainingMetrics()
+	weights := model.GetWeights()
+	bias := model.GetBias()
 
-	records, err := reader.ReadAll()
-	if err != nil {
-		log.Fatalf("failed to read CSV: %v", err)
-	}
-
-	if len(records) < 2 {
-		log.Fatalf("CSV file does not contain enough rows")
-	}
-
-	records = records[1:] // Skip the header row
-
-	rows := len(records)
-	cols := len(records[0]) - 1 // Last column is the target
-
-	xData := make([]float64, rows*cols)
-	yData := make([]float64, rows)
-
-	for i, record := range records {
-		for j := 0; j < cols; j++ {
-			val, err := strconv.ParseFloat(record[j], 64)
-			if err != nil {
-				log.Fatalf("failed to parse float: %v", err)
-			}
-			xData[i*cols+j] = val
-		}
-		target, err := strconv.ParseFloat(record[cols], 64)
-		target = (target - 1) / 9.0
-		if err != nil {
-			log.Fatalf("failed to parse target: %v", err)
-		}
-		yData[i] = target
+	fmt.Printf("Entrenamiento completado en: %v\n", trainingTime)
+	fmt.Printf("¿Convergió?: %v\n", converged)
+	if len(loss) > 0 {
+		fmt.Printf("Pérdida final de entrenamiento: %.6f\n", loss[len(loss)-1])
 	}
 
-	x := mat.NewDense(rows, cols, xData)
-	y := mat.NewDense(rows, 1, yData)
+	fmt.Printf("Parámetros finales del modelo:\n")
 
-	return x, y
+	for i, weight := range weights {
+		fmt.Printf("- Característica_%d: %.6f\n", i, weight)
+	}
+	fmt.Printf("- Sesgo: %.6f\n", bias)
+
+	r2Train, mseTrain, rmseTrain := model.Evaluate(trainX, trainY)
+	r2Test, mseTest, rmseTest := model.Evaluate(testX, testY)
+
+	fmt.Printf("Desempeño:\n")
+	fmt.Printf("  Entrenamiento - R²: %.4f, MSE: %.4f, RMSE: %.4f\n", r2Train, mseTrain, rmseTrain)
+	fmt.Printf("  Prueba        - R²: %.4f, MSE: %.4f, RMSE: %.4f\n", r2Test, mseTest, rmseTest)
+
+	fmt.Printf("Predicciones de ejemplo:\n")
+	fmt.Printf("%-8s %-12s %-8s\n", "Real", "Predicho", "Error")
+	for i := 0; i < utils.Min(len(testX), 8); i++ {
+		prediction := model.Predict(testX[i])
+		error := prediction - testY[i]
+		fmt.Printf("%-8.2f %-12.2f %-8.2f\n", testY[i], prediction, error)
+	}
 }
+
 
 func main() {
-	train_x, train_y := loadDF("data/train_augmented.csv")
-	test_x, test_y := loadDF("data/test.csv")
+	fmt.Println("=== Regresión Lineal con Go ===")
+	fmt.Println("Cargando datos desde archivos CSV...")
 
-	config := nn.Config{
-		Eta:       0.3,
-		Epochs:    100,
-		BatchSize: 100,
+	targetColumn := 6
+
+	featureColumns := []int{}
+	for i := 0; i < 50; i++ {
+		if i != 6 {
+			featureColumns = append(featureColumns, i)
+		}
 	}
 
-	mlp := nn.NewMLP([]int{11, 32, 16, 8, 1}, config)
+	dateColumns := []int{1}
 
-	mlp.TrainConcurrent(train_x, train_y)
-	mae, mse := mlp.Evaluate(test_x, test_y)
-	fmt.Println("MAE: ", mae)
-	fmt.Println("MSE: ", mse)
+	trainFile := "Data/train_data.csv"
+	trainData, err := rd.ReadCSV(trainFile, targetColumn, featureColumns, dateColumns)
+	if err != nil {
+		log.Fatalf("Error al cargar los datos de entrenamiento: %v", err)
+	}
 
+	fmt.Printf("\n=== Datos de Entrenamiento ===\n")
+	rd.PrintDataSummary(trainData, "Características Académicas Seleccionadas")
+
+	testFile := "Data/test_data.csv"
+	testData, err := rd.ReadCSV(testFile, targetColumn, featureColumns, dateColumns)
+	if err != nil {
+		log.Fatalf("Error al cargar los datos de prueba: %v", err)
+	}
+
+	fmt.Printf("\n=== Datos de Prueba ===\n")
+	rd.PrintDataSummary(testData, "Características Académicas Seleccionadas")
+
+	fmt.Printf("\n=== Ejecutando Diferentes Modelos de Regresión ===\n")
+
+	fmt.Printf("\n--- Regresión Multivariante ---\n")
+	runMultivariateRegression(trainData, testData, featureColumns)
+
+	fmt.Printf("\n=== ¡Programa completado exitosamente! ===\n")
 }
+
+
